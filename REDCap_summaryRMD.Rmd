@@ -1,0 +1,939 @@
+---
+title: "REDCap_summary"
+author: "Atul Kumar"
+date: "`r Sys.Date()`"
+# output: word_document
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars} 
+library(dplyr)
+if (!require(stringr)) install.packages("stringr")
+if (!require(readxl)) install.packages("readxl")
+if (!require(openxlsx)) install.packages("openxlsx")
+if (!require(kableExtra)) install.packages("kableExtra")
+# Load stringr
+library(stringr)
+# load the redcap file:
+session_level_filled_data<-read.csv('StrokeImagingAnalysi_DATA_2024-04-29_1857.csv')
+unique_subjects<-unique(session_level_filled_data$record_id)
+df<-session_level_filled_data
+df$row_number <- seq_along(df$record_id)
+subject_timing_row_identifier<-function(df){
+  # df$subject_row<-NA #seq_along(df$record_id)
+  inputcolumnname<-'record_id'
+  outputcolumnname<-'subject_row'
+  command<-paste0('df$',outputcolumnname,' <- 0')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  counter<-0
+  unique_subjects<-unique(session_level_filled_data$record_id)
+  for (target_group in unique_subjects){
+    brain_scan_present_marker<-0
+    group_rows <- df[df$record_id == target_group, ]
+    command<-paste0('df$',outputcolumnname,'[group_rows$row_number[1]]<-1')
+    expr <- parse(text = command)
+    result <- eval(expr)
+  }
+  ## mask columns for timing
+  ## baseline definition
+  df <- df %>%
+    mutate(within12hrs = if_else(onset_to_scan_hours <=12 & onset_to_scan_hours >-24 , 1, 0 ))
+  ## follow up defintion
+  # df <- df %>%
+  #   mutate(between12and72hrs = if_else(onset_to_scan_hours >12 & onset_to_scan_hours <=72, 1, 0 ))
+  df$sessions_row<-0
+  df$sessions_row[df$subject_row!=1]<-1
+  return(df)
+}
+df<-subject_timing_row_identifier(df)
+write.csv(df,'test.csv',row.names = FALSE)
+df<-read.csv('test.csv')
+stroke_side<-function(this_data_frame){
+  # this_data_frame<-read.csv('this_dataframe.csv')
+  counter<-0
+  df<-this_data_frame
+  df$stroke_side_subject<-NA
+  ## divide into group
+  for (target_group in unique_subjects){
+    
+    
+    # ##print('X')
+    # ##print(target_group)
+    group_rows <- df[df$record_id == target_group, ]
+    group_rows <- group_rows %>%
+      filter(!is.na(stroke_side))
+    if (length(group_rows)>0) {
+      # #print(group_rows)
+      
+      filtered_vector <- group_rows$stroke_side[nchar(group_rows$stroke_side) > 0]
+      # #print(group_rows$stroke_side)
+      
+      if (length(filtered_vector) > 0) {
+        # #print(length(filtered_vector))
+        l_present<-FALSE
+        r_present<-FALSE
+        b_present<-FALSE
+        r_present <- 'R' %in% filtered_vector
+        l_present <- 'L' %in% filtered_vector
+        b_present <- 'B' %in% filtered_vector
+        # #print( paste0(r_present,'::'))
+        # #print(filtered_vector)
+        # #print( paste0(l_present,'::'))
+        # #print(filtered_vector)
+        # #print( paste0(b_present,'::'))
+        # #print(filtered_vector)
+        counter<-counter+1
+        # if (counter>10) {
+        # break}
+        # #print(all(filtered_vector =='L'))
+        if (l_present & all(filtered_vector =='L')) {
+          df$stroke_side_subject[group_rows$row_number[1]]<-'L'
+        }
+        if (r_present  & all(filtered_vector =='R')) {
+          df$stroke_side_subject[group_rows$row_number[1]]<-'R'
+        }
+        if (b_present  & all(filtered_vector =='B')) {
+          df$stroke_side_subject[group_rows$row_number[1]]<-'B'
+        }
+        if ( (l_present & r_present) | (l_present & b_present) | (b_present & r_present)  ) {
+          df$stroke_side_subject[group_rows$row_number[1]]<-'Mismatch'
+        }
+        if (!l_present & !r_present & !b_present) {
+          df$stroke_side_subject[group_rows$row_number[1]]<-NA
+          
+        }
+      }
+      # else{df$stroke_side_subject[group_rows$row_number[1]]<-NA}
+      # }
+      else{df$stroke_side_subject[group_rows$row_number[1]]<-NA}
+    }
+    ## in each group find the side 
+    
+    ## if all sides are L -> get L side
+    
+    ## if all sides are R -> get R side
+    
+    ## if one side is R and other is L -> get B 
+    
+    ## if no
+  }
+  return(df)
+  # write.csv(df,'this_data_with_stroke_side.csv',row.names = FALSE)
+  
+}
+
+find_sum<-function(df,outputcolname,inputcolumn){
+  command<-paste0('df$','tempcopy',' <-','df$',inputcolumn)
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  command<-paste0('df$',outputcolname,' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  counter<-0
+  for (target_group in unique_subjects){
+    group_rows <- df[df$record_id == target_group, ]
+    command<-paste0('max_index <- sum(group_rows$','tempcopy', ',na.rm=TRUE)')
+    expr <- parse(text = command)
+    result <- eval(expr)
+    command<-paste0('df$',outputcolname,'[group_rows$row_number[1]]<-max_index')
+    expr <- parse(text = command)
+    result <- eval(expr)
+    
+  }
+
+  
+  counter<-counter+1
+  command<-paste0('df$','tempcopy',' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+
+  return(df)
+}
+baseline_scan_present<-function(df,outputcolname,inputcolumn){
+  command<-paste0('df$',outputcolname,' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  command<-paste0('df$','tempcopy',' <-','df$',inputcolumn)
+  expr <- parse(text = command)
+  result <- eval(expr)
+  counter<-0
+  for (target_group in unique_subjects){
+    group_rows <- df[df$record_id == target_group, ]
+    command<-paste0('max_index <- sum(group_rows$','tempcopy', ',na.rm=TRUE)')
+    expr <- parse(text = command)
+    result <- eval(expr)
+    if (max_index>0 & abs(max_index)!=Inf) {
+    command<-paste0('df$',outputcolname,'[group_rows$row_number[1]]<-1')
+    expr <- parse(text = command)
+    result <- eval(expr)
+    }
+    if (max_index==0 & abs(max_index)!=Inf) {
+      command<-paste0('df$',outputcolname,'[group_rows$row_number[1]]<-0')
+      expr <- parse(text = command)
+      result <- eval(expr)
+      
+    }
+    
+  }
+  
+  
+  counter<-counter+1
+  command<-paste0('df$','tempcopy',' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  return(df)
+}
+
+find_value_n_instance_closest_to_xhours<-function(df,outputcolname,outputcolname1,outputcolname2,inputcolumn,hours){
+#   outputcolname<-'fu24_scan_hours'
+  # outputcolname1<-'fu24_scan'
+# outputcolname2<-'fu24_scan_global_id'
+#   outputcolname<-'baseline_scan_time' #''
+# outputcolname1<-'baseline_instance_id'
+# outputcolname2<-'baseline_global_id'
+# command<-paste0('df$',outputcolname,'[group_rows$row_number[1]]','<-df$','tempcopy','[group_rows$row_number[min_index]]')
+# command<-paste0('df$',outputcolname1,'[group_rows$row_number[1]]','<-df$','redcap_repeat_instance','[group_rows$row_number[min_index]]')
+# command<-paste0('df$',outputcolname2,'[group_rows$row_number[min_index]]','<-1')
+  command<-paste0('df$','tempcopy',' <-','as.numeric(df$',inputcolumn,')')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  command<-paste0('df$',outputcolname,' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  command<-paste0('df$',outputcolname1,' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  command<-paste0('df$',outputcolname2,' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  counter<-0
+  command<-paste0('df$tempcopydiff<-abs(df$',"tempcopy",'-hours)')
+  expr <- parse(text = command)
+  result <- eval(expr)
+
+  for (target_group in unique_subjects){
+    group_rows <- df[df$record_id == target_group, ]
+    command<-paste0('min_value <- min(group_rows$tempcopydiff', ',na.rm=TRUE)')
+    expr <- parse(text = command)
+    result <- eval(expr)
+    command<-paste0('min_index <- which.min(group_rows$tempcopydiff', ')')
+    expr <- parse(text = command)
+    result <- eval(expr)
+    # #print(min_value)
+    if (min_value>0 & abs(min_value)!=Inf) {
+      command<-paste0('df$',outputcolname,'[group_rows$row_number[1]]','<-df$','tempcopy','[group_rows$row_number[min_index]]')
+      expr <- parse(text = command)
+      result <- eval(expr)
+      command<-paste0('df$',outputcolname1,'[group_rows$row_number[1]]','<-df$','redcap_repeat_instance','[group_rows$row_number[min_index]]')
+      expr <- parse(text = command)
+      result <- eval(expr)
+      command<-paste0('df$',outputcolname2,'[group_rows$row_number[min_index]]','<-1')
+      expr <- parse(text = command)
+      result <- eval(expr)
+    }
+
+  }
+
+
+  counter<-counter+1
+  command<-paste0('df$','tempcopy',' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  return(df)
+  
+}
+max_in_subject<-function(df,outputcolname,inputcolumn) {
+  command<-paste0('df$','tempcopy',' <-','as.numeric(df$',inputcolumn,')')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  command<-paste0('df$',outputcolname,' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  for (target_group in unique_subjects){
+    group_rows <- df[df$record_id == target_group, ]
+    command<-paste0('max_value <- max(group_rows$tempcopy', ',na.rm=TRUE)')
+    expr <- parse(text = command)
+    result <- eval(expr)
+
+    if (abs(max_value)!=Inf) {
+      # #print(max_value)
+      command<-paste0('df$',outputcolname,'[group_rows$row_number[1]]','<-max_value')
+      expr <- parse(text = command)
+      result <- eval(expr)
+    }
+    
+  }
+  
+  
+  # counter<-counter+1
+  command<-paste0('df$','tempcopy',' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  return(df)
+  
+  
+}
+min_in_subject<-function(df,outputcolname,inputcolumn) {
+  command<-paste0('df$','tempcopy',' <-','as.numeric(df$',inputcolumn,')')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  command<-paste0('df$',outputcolname,' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  for (target_group in unique_subjects){
+    group_rows <- df[df$record_id == target_group, ]
+    command<-paste0('max_value <- min(group_rows$tempcopy', ',na.rm=TRUE)')
+    expr <- parse(text = command)
+    result <- eval(expr)
+    
+    if (abs(max_value)!=Inf) {
+      # #print(max_value)
+      command<-paste0('df$',outputcolname,'[group_rows$row_number[1]]','<-max_value')
+      expr <- parse(text = command)
+      result <- eval(expr)
+    }
+    
+  }
+  
+  
+  # counter<-counter+1
+  command<-paste0('df$','tempcopy',' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  return(df)
+  
+  
+}
+max_in_subject_with_respective_othercol<-function(df,outputcolname,inputcolumn,respectivecolmn) {
+  command<-paste0('df$','tempcopy',' <-','as.numeric(df$',inputcolumn,')')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  command<-paste0('df$',outputcolname,' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  counter<-0
+
+  
+  for (target_group in unique_subjects){
+    group_rows <- df[df$record_id == target_group, ]
+    command<-paste0('min_value <- max(group_rows$tempcopy', ',na.rm=TRUE)')
+    expr <- parse(text = command)
+    result <- eval(expr)
+    command<-paste0('min_index <- which.max(group_rows$tempcopy', ')')
+    expr <- parse(text = command)
+    result <- eval(expr)
+    # #print(min_value)
+    if (min_value>0 & abs(min_value)!=Inf) {
+      command<-paste0('df$',outputcolname1,'[group_rows$row_number[1]]','<-min_value')
+      expr <- parse(text = command)
+      result <- eval(expr)
+      command<-paste0('df$',outputcolname,'[group_rows$row_number[1]]','<-df$',respectivecolmn,'[group_rows$row_number[min_index]]')
+      expr <- parse(text = command)
+      result <- eval(expr)
+      
+    }
+    
+  }
+  
+  
+  counter<-counter+1
+  command<-paste0('df$','tempcopy',' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  return(df)
+  
+  
+}
+
+min_in_subject_with_respective_othercol<-function(df,outputcolname,inputcolumn,respectivecolmn) {
+  command<-paste0('df$','tempcopy',' <-','as.numeric(df$',inputcolumn,')')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  command<-paste0('df$',outputcolname,' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  counter<-0
+  for (target_group in unique_subjects){
+    group_rows <- df[df$record_id == target_group, ]
+    command<-paste0('min_value <- min(group_rows$tempcopy', ',na.rm=TRUE)')
+    expr <- parse(text = command)
+    result <- eval(expr)
+    command<-paste0('min_index <- which.min(group_rows$tempcopy', ')')
+    expr <- parse(text = command)
+    result <- eval(expr)
+    # #print(min_value)
+    if (min_value>0 & abs(min_value)!=Inf) {
+      command<-paste0('df$',outputcolname1,'[group_rows$row_number[1]]','<-min_value')
+      expr <- parse(text = command)
+      result <- eval(expr)
+      command<-paste0('df$',outputcolname,'[group_rows$row_number[1]]','<-df$',respectivecolmn,'[group_rows$row_number[min_index]]')
+      expr <- parse(text = command)
+      result <- eval(expr)
+
+    }
+    
+  }
+  
+  
+  counter<-counter+1
+  command<-paste0('df$','tempcopy',' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  return(df)
+  
+  
+}
+
+
+max_non_numerical_in_subject<-function(df,outputcolname,inputcolumn) {
+  command<-paste0('df$','tempcopy',' <-','df$',inputcolumn)
+  expr <- parse(text = command)
+  result <- eval(expr)
+  command<-paste0('df$',outputcolname,' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  for (target_group in unique_subjects){
+    group_rows <- df[df$record_id == target_group, ]
+    command<-paste0('max_value <- max(group_rows$tempcopy', ',na.rm=TRUE)')
+    expr <- parse(text = command)
+    result <- eval(expr)
+    
+    if (max_value!=Inf | max_value!=-Inf  ) {
+      # #print(max_value)
+      command<-paste0('df$',outputcolname,'[group_rows$row_number[1]]','<-max_value')
+      expr <- parse(text = command)
+      result <- eval(expr)
+    }
+    
+  }
+  
+  
+  # counter<-counter+1
+  command<-paste0('df$','tempcopy',' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  return(df)
+  
+  
+}
+
+process_all_finder<-function(df,outputcolname,inputcolumn) {
+  command<-paste0('df$','tempcopy',' <-','df$',inputcolumn)
+  expr <- parse(text = command)
+  result <- eval(expr)
+  command<-paste0('df$',outputcolname,' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  for (target_group in unique_subjects){
+    group_rows <- df[df$record_id == target_group, ]
+    # command<-paste0('max_value <- max(group_rows$tempcopy', ',na.rm=TRUE)')
+    group_rows_1<-group_rows[group_rows$sessions_row==1,]
+    # expr <- parse(text = command)
+    # result <- eval(expr)
+    sum_by_length<-0
+    if (length(group_rows_1$tempcopy)>0 & sum(group_rows_1$tempcopy,na.rm=TRUE) > 0) {
+      #print(paste0('sum',sum(group_rows_1$tempcopy,na.rm=TRUE)))
+      #print(paste0('length',length(group_rows_1$tempcopy)))
+    sum_by_length<-sum(group_rows_1$tempcopy,na.rm=TRUE)/length(group_rows_1$tempcopy)
+    #print(paste0('ratio',sum_by_length))
+    }
+    if (sum_by_length==1) # {}
+    
+    # if (max_value!=Inf | max_value!=-Inf  ) 
+      {
+      # #print(max_value)
+      command<-paste0('df$',outputcolname,'[group_rows$row_number[1]]','<-1')
+      expr <- parse(text = command)
+      result <- eval(expr)
+    }
+    else {
+      command<-paste0('df$',outputcolname,'[group_rows$row_number[1]]','<-0')
+      expr <- parse(text = command)
+      result <- eval(expr)
+      
+    }
+    
+  }
+  
+  
+  # counter<-counter+1
+  command<-paste0('df$','tempcopy',' <- NA')
+  expr <- parse(text = command)
+  result <- eval(expr)
+  
+  return(df)
+  
+  
+}
+###############
+inputcolumn<-'brain_present'
+outputcolname<-'brain_scans_number'
+df<-find_sum(df,outputcolname,inputcolumn)
+# Select specific columns and display first few rows
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                 brain_present, brain_scans_number) %>% head(100)
+kable(selected_data, caption = "brain_scans_number ")
+######################
+df<-stroke_side(df)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                 stroke_side, stroke_side_subject) %>% head(100)
+kable(selected_data, caption = "stroke side ")
+###############
+inputcolumn<-'cta_present'
+outputcolname<-'cta_number'
+df<-find_sum(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                 cta_present, cta_number) %>% head(100)
+kable(selected_data, caption = "cta_number ")
+##################
+inputcolumn<-'ctp_present'
+outputcolname<-'ctp_number'
+df<-find_sum(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                 ctp_present, ctp_number) %>% head(100)
+kable(selected_data, caption = "ctp_number ")
+###############
+inputcolumn<-'tempcopy1'
+outputcolname<-'baseline_scan_present'
+df$tempcopy1<-df$within12hrs
+df$tempcopy1[df$brain_present==0]<-NA
+df$tempcopy1[df$csf_usable==0]<-NA
+df<-baseline_scan_present(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present, within12hrs, baseline_scan_present,onset_to_scan_hours) %>% head(100)
+kable(selected_data, caption = "baseline_scan_present")
+# #####################################
+inputcolumn<-'tempcopy1'
+# outputcolname<-'baseline_instance_id'
+# outputcolname1<-'baseline_scan_time'
+# outputcolname2<-'isthisabaseline'
+  outputcolname<-'baseline_scan_time' #''
+outputcolname1<-'baseline_instance_id'
+outputcolname2<-'baseline_global_id'
+df$tempcopy1<-df$onset_to_scan_hours
+df$tempcopy1[df$brain_present==0]<-NA
+df$tempcopy1[df$csf_usable==0]<-NA
+df$tempcopy1[df$within12hrs==0]<-NA
+hours<-0
+df<-find_value_n_instance_closest_to_xhours(df,outputcolname,outputcolname1,outputcolname2,inputcolumn,hours)
+df$isthisabaseline<-df$baseline_global_id
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,csf_usable,
+                                brain_present, baseline_instance_id, baseline_scan_time,onset_to_scan_hours) %>% head(100)
+kable(selected_data, caption = "baseline_scan_time")
+df$isthisfu<-1
+df$isthisfu[df$subject_row==1]<-NA
+df$isthisfu[df$brain_present==0]<-NA
+df$isthisfu[df$isthisabaseline==1]<-NA
+# ######################################
+inputcolumn<-'tempcopy1'
+outputcolname<-'csf_baseline'
+# outputcolname1<-'baseline_scan_time'
+df$tempcopy1<-df$csf_total
+df$tempcopy1[df$csf_usable==0]<-NA
+df$tempcopy1[is.na(df$isthisabaseline)]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+# df$tempcopy1[df$mask_usable==0]<-NA
+# df$tempcopy1[df$within12hrs==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present, csf_total, csf_usable,isthisabaseline,csf_baseline,onset_to_scan_hours) %>% head(100)
+kable(selected_data, caption = "csf_baseline")
+
+###########
+# ######################################
+inputcolumn<-'tempcopy1'
+outputcolname<-'csf_ratio_baseline'
+df$tempcopy1<-df$csf_ratio
+df$tempcopy1[df$csf_ratio_usable==0]<-NA
+df$tempcopy1[df$csf_usable==0]<-NA
+df$tempcopy1[is.na(df$isthisabaseline)]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present, csf_ratio,csf_usable, csf_ratio_usable,isthisabaseline,csf_ratio_baseline,onset_to_scan_hours) %>% head(100)
+kable(selected_data, caption = "csf_ratio_baseline")
+#########################
+######################################
+inputcolumn<-'tempcopy1'
+outputcolname<-'csf_ratio_strokeside_baseline'
+df$tempcopy1<-df$csf_ratio_strokeside
+df$tempcopy1[df$csf_usable==0]<-NA
+df$tempcopy1[is.na(df$isthisabaseline)]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,isthisabaseline,onset_to_scan_hours,csf_ratio_strokeside,csf_ratio_strokeside_baseline) %>% head(100)
+kable(selected_data, caption = "brain_ratio_baseline")
+##############
+######################################
+inputcolumn<-'tempcopy1'
+outputcolname<-'brain_ratio_baseline'
+df$tempcopy1<-df$brain_ratio
+df$tempcopy1[is.na(df$isthisabaseline)]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,isthisabaseline,onset_to_scan_hours,brain_ratio,brain_ratio_baseline) %>% head(100)
+kable(selected_data, caption = "brain_ratio_baseline")
+##############
+
+######################################
+inputcolumn<-'tempcopy1'
+outputcolname<-'aspects_baseline'
+df$tempcopy1<-df$aspects
+df$tempcopy1[is.na(df$isthisabaseline)]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,isthisabaseline,onset_to_scan_hours,aspects,aspects_baseline) %>% head(100)
+kable(selected_data, caption = "aspects_baseline")
+##############
+######################################
+inputcolumn<-'tempcopy1'
+outputcolname<-'fu_scan_number'
+df$tempcopy1<-df$isthisfu
+df$tempcopy1[is.na(df$isthisfu)]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df$tempcopy1[df$onset_to_scan_hours<=12]<-NA
+df$tempcopy1[df$onset_to_scan_hours>=168]<-NA
+df<-find_sum(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,onset_to_scan_hours,isthisfu,fu_scan_number) %>% head(100)
+kable(selected_data, caption = "fu_scan_number")
+##############
+#####################################
+inputcolumn<-'tempcopy1'
+outputcolname<-'fu24_scan_hours'
+outputcolname1<-'fu24_scan'
+outputcolname2<-'fu24_scan_global_id'
+df$tempcopy1<-df$onset_to_scan_hours
+df$tempcopy1[is.na(df$isthisfu)]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df$tempcopy1[df$csf_usable==0]<-NA
+hours<-24
+df<-find_value_n_instance_closest_to_xhours(df,outputcolname,outputcolname1,outputcolname2,inputcolumn,hours)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,onset_to_scan_hours,isthisfu,fu24_scan,fu24_scan_global_id,fu24_scan_hours) %>% head(100)
+kable(selected_data, caption = "fu24_scan_hours")
+# write.csv(df,'temp.csv',row.names = FALSE)
+##############
+#####################################
+inputcolumn<-'tempcopy1'
+outputcolname<-'csf_fu24'
+df$tempcopy1<-df$csf_total
+df$tempcopy1[is.na(df$isthisfu) ]<-NA
+df$tempcopy1[is.na(df$fu24_scan_global_id)]<-NA
+df$tempcopy1[df$brain_present == 0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,isthisabaseline,fu24_scan_global_id,isthisfu,onset_to_scan_hours,csf_total,csf_fu24) %>% head(100)
+kable(selected_data, caption = "csf_fu24")
+#############
+
+#####################################
+inputcolumn<-'tempcopy1'
+outputcolname<-'csf_ratio_fu24'
+df$tempcopy1<-df$csf_ratio
+df$tempcopy1[is.na(df$isthisfu)]<-NA
+df$tempcopy1[is.na(df$fu24_scan_global_id)]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df$tempcopy1[df$csf_ratio_usable==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,onset_to_scan_hours,isthisabaseline,fu24_scan_global_id,isthisfu,csf_ratio,csf_ratio_fu24) %>% head(100)
+kable(selected_data, caption = "csf_ratio_fu24")
+############
+#####################################
+inputcolumn<-'tempcopy1'
+outputcolname<-'csf_ratio_strokeside_fu24'
+df$tempcopy1<-df$csf_ratio_strokeside
+df$tempcopy1[is.na(df$isthisfu)]<-NA
+df$tempcopy1[is.na(df$fu24_scan_global_id)]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df$tempcopy1[df$csf_ratio_usable==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,onset_to_scan_hours,isthisabaseline,fu24_scan_global_id,isthisfu,csf_ratio_strokeside,csf_ratio_strokeside_fu24) %>% head(100)
+kable(selected_data, caption = "csf_ratio_fu24")
+############
+####################################
+inputcolumn<-'tempcopy1'
+outputcolname<-'brain_ratio_fu24'
+df$tempcopy1<-df$brain_ratio
+df$tempcopy1[is.na(df$isthisfu)]<-NA
+df$tempcopy1[is.na(df$fu24_scan_global_id)]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,onset_to_scan_hours,isthisabaseline,fu24_scan_global_id,isthisfu,brain_ratio,brain_ratio_fu24) %>% head(100)
+kable(selected_data, caption = "brain_ratio_fu24")
+########################
+#####################################
+inputcolumn<-'tempcopy1'
+outputcolname<-'nwu_fu24'
+df$tempcopy1<-df$nwu
+df$tempcopy1[is.na(df$isthisfu)]<-NA
+df$tempcopy1[is.na(df$fu24_scan_global_id)]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df$tempcopy1[df$nwu_usable==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,onset_to_scan_hours,isthisabaseline,fu24_scan_global_id,isthisfu,nwu,nwu_fu24) %>% head(100)
+kable(selected_data, caption = "nwu_fu24")
+#########################
+##################
+inputcolumn<-'tempcopy1'
+outputcolname<-'brain_scans_pdfs'
+df$tempcopy1<-df$pdf_created
+df$tempcopy1[df$brain_present==0]<-NA
+df<-find_sum(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,pdf_created,brain_scans_pdfs) %>% head(100)
+kable(selected_data, caption = "brain_scans_pdfs")
+###############
+df$process_success<-NA
+# df$process_success[df$brain_scans_pdfs==df$brain_scans_number]<-1
+df$process_success[df$pdf_created==1 & df$brain_present==1]<-1
+df$process_success[df$brain_present==1 & df$pdf_created==0 & df$pdf_reason==1]<-1
+df$process_success[df$brain_present==1 & df$pdf_created==0 & df$pdf_reason==2]<-1
+df$process_success[df$brain_present==1 & df$pdf_created==0 & (df$pdf_reason!=1 | df$pdf_reason!=2)]<-0
+df$process_success[df$brain_present==0]<-1
+inputcolumn<-'tempcopy1'
+outputcolname<-'process_all'
+df$tempcopy1<-df$process_success
+df<-process_all_finder(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,pdf_created,process_success,pdf_reason,process_all) %>% head(100)
+kable(selected_data, caption = "process_all")
+########################################################################
+inputcolumn<-'wmh'
+outputcolname<-'wmh_subject'
+inputcolumn<-'tempcopy1'
+# outputcolname<-'brain_scans_pdfs'
+df$tempcopy1<-as.numeric(df$wmh)
+df$tempcopy1[df$brain_present==0]<-NA
+df<-baseline_scan_present(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,wmh,wmh_subject) %>% head(100)
+kable(selected_data, caption = "wmh_subject")
+#############################################
+outputcolname<-'wmh_severity_subject'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$wmh_severity
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,wmh_severity,wmh_severity_subject) %>% head(100)
+kable(selected_data, caption = "wmh_severity_subject")
+
+########################################
+outputcolname<-'old_stroke_present'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$old_stroke
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,old_stroke,old_stroke_present) %>% head(100)
+kable(selected_data, caption = "old_stroke_present")
+###################################
+########################################
+outputcolname<-'mls_present_subject'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$mls_present
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,mls_present,mls_present_subject) %>% head(100)
+kable(selected_data, caption = "mls_present_subject")
+###################################
+########################################
+outputcolname<-'mls_max'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$mls
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,mls,mls_max) %>% head(100)
+kable(selected_data, caption = "mls_max")
+###################################
+########################################
+outputcolname<-'ced_max'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$ced_grade
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,ced_grade,ced_max) %>% head(100)
+kable(selected_data, caption = "ced_max")
+###################################
+########################################
+outputcolname<-'ht_heidelberg_max'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$ht_heidelberg
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_non_numerical_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,ht_heidelberg,ht_heidelberg_max) %>% head(100)
+kable(selected_data, caption = "ht_heidelberg_max")
+##################################
+########################################
+outputcolname<-'infarct_volume_max'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$infarct_volume
+df$tempcopy1[df$brain_present==0]<-NA
+df$tempcopy1[df$infarct_mask_usable==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,infarct_volume,infarct_volume_max) %>% head(100)
+kable(selected_data, caption = "infarct_volume_max")
+##########################
+########################################
+outputcolname<-'csf_ratio_min'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$csf_ratio
+df$tempcopy1[df$csf_ratio_usable==0]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df<-min_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,csf_ratio,csf_ratio_min) %>% head(100)
+kable(selected_data, caption = "csf_ratio_min")
+# ##########################
+########################################
+outputcolname<-'nwu_max'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$nwu
+df$tempcopy1[df$brain_present==0]<-NA
+df$tempcopy1[df$nwu_usable==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,nwu,nwu_max) %>% head(100)
+kable(selected_data, caption = "nwu_max")
+##########################
+#######################################
+outputcolname<-'brain_ratio_max'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$brain_ratio
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,brain_ratio,brain_ratio_max) %>% head(100)
+kable(selected_data, caption = "brain_ratio_max")
+##########################
+#######################################
+outputcolname<-'csf_total_max'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$csf_total
+df$tempcopy1[df$brain_present==0]<-NA
+df$tempcopy1[df$csf_usable==0]<-NA
+df<-max_in_subject(df,outputcolname,inputcolumn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,csf_total,csf_total_max) %>% head(100)
+kable(selected_data, caption = "brain_ratio_max")
+##########################
+
+outputcolname<-'mls_max_hours'
+respectivecolmn<-'onset_to_scan_hours'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$mls
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_in_subject_with_respective_othercol(df,outputcolname,inputcolumn,respectivecolmn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,mls,mls_max_hours,onset_to_scan_hours) %>% head(100)
+kable(selected_data, caption = "mls_max_hours")
+############################
+##########################
+outputcolname<-'csf_ratio_min_hours'
+respectivecolmn<-'onset_to_scan_hours'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$csf_ratio
+df$tempcopy1[df$csf_ratio_usable==0]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df<-min_in_subject_with_respective_othercol(df,outputcolname,inputcolumn,respectivecolmn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,csf_ratio,csf_ratio_min_hours,onset_to_scan_hours) %>% head(100)
+kable(selected_data, caption = "csf_ratio_min_hours")
+############################
+# ##########################
+outputcolname<-'nwu_max_hours'
+respectivecolmn<-'onset_to_scan_hours'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$nwu
+df$tempcopy1[df$nwu_usable==0]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df<-max_in_subject_with_respective_othercol(df,outputcolname,inputcolumn,respectivecolmn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,mls,nwu,nwu_max_hours,onset_to_scan_hours) %>% head(100)
+kable(selected_data, caption = "nwu_max_hours")
+##########
+# ##########################
+outputcolname<-'infarct_volume_max_hours'
+respectivecolmn<-'onset_to_scan_hours'
+inputcolumn<-'tempcopy1'
+df$tempcopy1<-df$infarct_volume
+df$tempcopy1[df$brain_present==0]<-NA
+df$tempcopy1[df$infarct_mask_usable==0]<-NA
+df<-max_in_subject_with_respective_othercol(df,outputcolname,inputcolumn,respectivecolmn)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,mls,infarct_volume,infarct_volume_max_hours,onset_to_scan_hours) %>% head(100)
+kable(selected_data, caption = "infarct_volume_max_hours")
+#################################################
+inputcolumn<-'tempcopy1'
+outputcolname<-'fu24_scan_hours'
+outputcolname1<-'fu24_scan'
+outputcolname2<-'fu24_scan_global_id'
+df$tempcopy1<-df$onset_to_scan_hours
+df$tempcopy1[is.na(df$isthisfu)]<-NA
+df$tempcopy1[df$brain_present==0]<-NA
+df$tempcopy1[df$csf_usable==0]<-NA
+hours<-24
+df<-find_value_n_instance_closest_to_xhours(df,outputcolname,outputcolname1,outputcolname2,inputcolumn,hours)
+selected_data <- df %>% select(record_id,scan_stem,snipr_session,
+                                brain_present,onset_to_scan_hours,isthisfu,fu24_scan,fu24_scan_global_id,fu24_scan_hours) %>% head(100)
+kable(selected_data, caption = "fu24_scan_hours")
+##########
+
+######
+# create variable csf_ratio_strokeside: forumla csf stroke side/csf_non-stroke side
+
+# stroke side = subject stroke side: remove the both and mismatch
+
+write.csv(df,'test1.csv',row.names = FALSE)
+##################################
+
+```
+
+<!-- ## Including Plots -->
+
+<!-- You can also embed plots, for example: -->
+
+<!-- # ```{r pressure, echo=FALSE} -->
+<!-- # # plot(pressure) -->
+<!-- # ``` -->
+
+<!-- <!-- Note that the `echo = FALSE` parameter was added to the code chunk to prevent #printing of the R code that generated the plot. --> -->
